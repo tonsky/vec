@@ -1,0 +1,22 @@
+<!doctype html>
+<html>
+<head>
+  <script src="includes/react-0.13.2.js"></script>
+  <script src="includes/JSXTransformer-0.13.2.js"></script>
+  <script src="includes/immutable.js"></script>
+  <style>
+    html, body { margin: 0; height: 100%; -webkit-user-select: none; }
+    #canvas { width: 100%; height: 100%; background: #2B303B; }
+    rect { fill: transparent; }
+    rect.figure { fill: transparent; stroke: #C0C5CE; stroke-width:2; }
+    .figure.selected { stroke: #D08361; }
+
+    #toolbar > g { cursor: pointer; }
+    #toolbar > g > text { fill: #C0C5CE; font: 20px "Fira Sans"; }
+    #toolbar > g.selected > rect { fill: #C0C5CE; }
+    #toolbar > g.selected > text { fill: #2B303B; }
+  </style>
+</head>
+<body>
+  <script src="vec.js" type="text/jsx"></script>
+</body>
