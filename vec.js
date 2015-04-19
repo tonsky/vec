@@ -48,6 +48,36 @@ var figures = Immutable.Map({
         height: Math.abs(bb[1] - bb[3])
       });
     }
+  }),
+
+  oval: Immutable.Map({
+    render: function(fig, model) {
+      var selected = model.get("selection"),
+          className = selected.contains(fig) ? "figure selected" : "figure";
+      return <ellipse className = { className }
+                      cx        = { fig.get("cx") }
+                      cy        = { fig.get("cy") }
+                      rx        = { fig.get("rx") }
+                      ry        = { fig.get("ry") } />;
+    },
+    contains: function(fig, point) {
+      var x = point[0],
+          y = point[1],
+          cx = fig.get("cx"),
+          cy = fig.get("cy"),
+          rx = fig.get("rx"),
+          ry = fig.get("ry");
+      return (x-cx)*(x-cx)/(rx*rx) + (y-cy)*(y-cy)/(ry*ry) <= 1;
+    },
+    from_bb: function(bb) {
+      return Immutable.Map({
+        type: "oval",
+        cx:   (bb[0] + bb[2])/2,
+        cy:   (bb[1] + bb[3])/2,
+        rx:   Math.abs(bb[0] - bb[2])/2,
+        ry:   Math.abs(bb[1] - bb[3])/2
+      });
+    }
   })
 });
 
@@ -68,11 +98,19 @@ function dispatch(fig, fn) {
 
 // TOOLBAR
 
+function fig_drag_fn(fig) {
+  return function(model, bb, e) {
+    var scene = model.get("figures");
+    var instance = figures.get(fig).get("from_bb")(bb);
+    return model.set("figures", scene.push(instance))
+                .set("selection", Immutable.Set.of(instance));
+  }
+}
+
 var tools = Immutable.Map({
   select: Immutable.Map({
             key: "V",
             toolbar_offset: 0,
-            keyCode: 86,
             click: function(model, point, e) {
               var pred  = function(fig) { return dispatch(fig, "contains", point) },
                   fig   = model.get("figures").find(pred),
@@ -87,19 +125,9 @@ var tools = Immutable.Map({
                 return model;
             }
           }),
-  rect:   Immutable.Map({
-            key: "R",
-            toolbar_offset: 1,
-            keyCode: 82,
-            drag: function(model, bb, e) {
-              var scene = model.get("figures");
-              var rect  = figures.get("rect").get("from_bb")(bb);
-              return model.set("figures", scene.push(rect))
-                          .set("selection", Immutable.Set.of(rect));
-            }
-          }),
-  oval:   Immutable.Map({key: "O", toolbar_offset: 2, keyCode: 79}),
-  line:   Immutable.Map({key: "L", toolbar_offset: 3, keyCode: 76})
+  rect:   Immutable.Map({ key: "R", toolbar_offset: 1, drag: fig_drag_fn("rect") }),
+  oval:   Immutable.Map({ key: "O", toolbar_offset: 2, drag: fig_drag_fn("oval") }),
+  line:   Immutable.Map({ key: "L", toolbar_offset: 3 })
 });
 
 var Tool = React.createClass({
@@ -206,7 +234,7 @@ function find_map_entry(map, pred){
 
 document.addEventListener("keydown", function(e) {
   var tool = find_map_entry(tools, function(code,tool) {
-                                     return tool.get("keyCode") == e.keyCode });
+                                     return tool.get("key").charCodeAt(0) == e.keyCode });
   if (tool !== undefined)
     update(["tool"], tool[0]);
   switch (e.keyCode) {
