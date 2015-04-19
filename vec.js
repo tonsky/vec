@@ -78,7 +78,44 @@ var figures = Immutable.Map({
         ry:   Math.abs(bb[1] - bb[3])/2
       });
     }
-  })
+  }),
+
+  line: Immutable.Map({
+    render: function(fig, model) {
+      var selected = model.get("selection"),
+          className = selected.contains(fig) ? "figure selected" : "figure";
+      return <line className = { className }
+                   x1 = { fig.get("x1") }
+                   y1 = { fig.get("y1") }
+                   x2 = { fig.get("x2") }
+                   y2 = { fig.get("y2") } />;
+    },
+    contains: function(fig, point) {
+      var x1 = fig.get("x1"),
+          y1 = fig.get("y1"),
+          x2 = fig.get("x2"),
+          y2 = fig.get("y2"),
+          x  = point[0],
+          y  = point[1],
+          d  = Math.abs((y2 - y1) * x - (x2 - x1) * y + x2 * y1 - y2 * x1) /
+               Math.sqrt((y2-y1) * (y2-y1) + (x2 - x1) * (x2 - x1));
+
+      return Math.min(x1, x2) <= x &&
+             Math.max(x1, x2) >= x &&
+             Math.min(y1, y2) <= y &&
+             Math.max(y1, y2) >= y &&
+             d <= 10;
+    },
+    from_bb: function(bb) {
+      return Immutable.Map({
+        type: "line",
+        x1: bb[0],
+        y1: bb[1],
+        x2: bb[2],
+        y2: bb[3]
+      });
+    }
+  }),
 });
 
 function Rect(x,y,w,h) {
@@ -127,7 +164,7 @@ var tools = Immutable.Map({
           }),
   rect:   Immutable.Map({ key: "R", toolbar_offset: 1, drag: fig_drag_fn("rect") }),
   oval:   Immutable.Map({ key: "O", toolbar_offset: 2, drag: fig_drag_fn("oval") }),
-  line:   Immutable.Map({ key: "L", toolbar_offset: 3 })
+  line:   Immutable.Map({ key: "L", toolbar_offset: 3, drag: fig_drag_fn("line") })
 });
 
 var Tool = React.createClass({
