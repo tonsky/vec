@@ -17,13 +17,13 @@ function defmethod(name, dispatch_value, fn) {
 
 // MODEL
 
-var model_history = Immutable.List.of(
-  Immutable.Map({
-    tool: "select",
-    figures: Immutable.List.of(),
-    selection: Immutable.Set.of()
-  }));
-var history_at = 0;
+var empty_model = Immutable.Map({
+                    tool: "select",
+                    figures: Immutable.List.of(),
+                    selection: Immutable.Set.of()
+                  }),
+    model_history = Immutable.List.of(empty_model),
+    history_at = 0;
 
 function global_model() {
   return model_history.get(history_at);
@@ -32,7 +32,7 @@ function global_model() {
 function push_history(model) {
   model_history = model_history.setSize(history_at+1).push(model);
   history_at++;
-  var skip = model_history.size - 10;
+  var skip = model_history.size - 20;
   if (skip > 0) {
     history_at -= skip;
     model_history = model_history.skip(skip);
@@ -333,11 +333,20 @@ function render_canvas(model) {
   React.render(React.createElement(Canvas, { model: model || global_model() }), document.body);
 }
 
-edit_model(global_model().set("figures", Immutable.List.of(
-  figure_from_bb("rect", [100, 100, 260, 200]),
-  figure_from_bb("rect", [180, 120, 280, 280]),
-  figure_from_bb("rect", [140, 300, 200, 400])
-)));
+Immutable.List.of(
+  figure_from_bb("oval", [110, 115, 120, 125]),
+  figure_from_bb("oval", [130, 115, 140, 125]),
+  figure_from_bb("oval", [150, 115, 160, 125]),
+  figure_from_bb("line", [100, 140, 170, 140]),
+  figure_from_bb("line", [170, 140, 180, 110]),
+  figure_from_bb("line", [180, 110, 280, 110]),
+  figure_from_bb("line", [280, 110, 290, 140]),
+  figure_from_bb("line", [290, 140, 600, 140]),
+  figure_from_bb("line", [100, 180, 600, 180]),
+  figure_from_bb("rect", [100, 100, 600, 400])
+).forEach(function(fig) {
+  edit_model(global_model().set("figures", global_model().get("figures").push(fig)));
+});
 
 
 // KEYBOARD
