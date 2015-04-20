@@ -71,6 +71,8 @@ defmulti("figure_from_bb", function(type, bb)   { return type; });
 
 // RECT
 
+var Rect = Immutable.Record({x:0, y:0, w:0, h:0, type: "rect"});
+
 defmethod("render_figure", "rect", function(fig, selected) {
   return React.createElement(
           "rect", 
@@ -89,17 +91,18 @@ defmethod("inside_figure", "rect", function(fig, point) {
 });
 
 defmethod("figure_from_bb", "rect", function(type, bb) {
-  return Immutable.Map({
-    type: "rect",
-    x:    Math.min(bb[0], bb[2]),
-    y:    Math.min(bb[1], bb[3]),
-    w:    Math.abs(bb[0] - bb[2]),
-    h:    Math.abs(bb[1] - bb[3])
+  return new Rect({
+    x: Math.min(bb[0], bb[2]),
+    y: Math.min(bb[1], bb[3]),
+    w: Math.abs(bb[0] - bb[2]),
+    h: Math.abs(bb[1] - bb[3])
   });
 });
 
 
 // OVAL
+
+var Oval = Immutable.Record({cx:0, cy:0, rx:0, ry:0, type: "oval"});
 
 defmethod("render_figure", "oval", function(fig, selected) {
   return React.createElement(
@@ -122,17 +125,18 @@ defmethod("inside_figure", "oval", function(fig, point) {
 });
 
 defmethod("figure_from_bb", "oval", function(type, bb) {
-  return Immutable.Map({
-    type: "oval",
-    cx:   (bb[0] + bb[2])/2,
-    cy:   (bb[1] + bb[3])/2,
-    rx:   Math.abs(bb[0] - bb[2])/2,
-    ry:   Math.abs(bb[1] - bb[3])/2
+  return new Oval({
+    cx: (bb[0] + bb[2])/2,
+    cy: (bb[1] + bb[3])/2,
+    rx: Math.abs(bb[0] - bb[2])/2,
+    ry: Math.abs(bb[1] - bb[3])/2
   });
 });
 
 
 // LINE
+
+var Line = Immutable.Record({x1:0, y1:0, x2:0, y2:0, type: "line"});
 
 defmethod("render_figure", "line", function(fig, selected) {
   return React.createElement("line",
@@ -161,19 +165,18 @@ defmethod("inside_figure", "line", function(fig, point) {
 });
 
 defmethod("figure_from_bb", "line", function(type, bb) {
-  return Immutable.Map({ type: "line", x1: bb[0], y1: bb[1], x2: bb[2], y2: bb[3] });
+  return new Line({ x1: bb[0], y1: bb[1], x2: bb[2], y2: bb[3] });
 });
 
 
 // TOOLBAR
 
-var tools = Immutable.Map({
-  select: Immutable.Map({ key: "V", toolbar_offset: 0 }),
-  rect:   Immutable.Map({ key: "R", toolbar_offset: 1 }),
-  oval:   Immutable.Map({ key: "O", toolbar_offset: 2 }),
-  line:   Immutable.Map({ key: "L", toolbar_offset: 3 })
-});
-
+var tool_keys = Immutable.List.of(
+  ["select", "V"],
+  ["rect",   "R"],
+  ["oval",   "O"],
+  ["line",   "L"]
+);
 
 defmulti("tool_on_click", function(tool, model, point, e) { return tool; });
 defmulti("tool_on_drag",  function(tool, model, bb, e)    { return tool; });
@@ -211,9 +214,9 @@ defmethod("tool_on_drag", "line", fig_drag_fn);
 
 var Tool = React.createClass({
   render: function() {
-    var code = this.props.code,
-        tool = tools.get(code),
-        offset = 40 * tool.get("toolbar_offset");
+    var code     = this.props.code,
+        shortcut = this.props.shortcut,
+        offset   = 40 * this.props.offset;
 
     return React.createElement("g",
             { className: code === this.props.tool ? "selected" : "",
@@ -223,7 +226,7 @@ var Tool = React.createClass({
                            e.stopPropagation();
                          } },
             React.createElement("rect", {x: 0, y: 0, width: 40, height: 40}),
-            React.createElement("text", {textAnchor: "middle", x: 20, y: 27}, tool.get("key")));
+            React.createElement("text", {textAnchor: "middle", x: 20, y: 27}, shortcut));
   }
 });
 
@@ -232,10 +235,9 @@ var Toolbar = React.createClass({
     var tool = this.props.tool;
     return React.createElement("g",
             { id: "toolbar", transform: "translate(10,10)" },
-            React.createElement(Tool, {code: "select", tool: tool}),
-            React.createElement(Tool, {code: "rect",   tool: tool}),
-            React.createElement(Tool, {code: "oval",   tool: tool}),
-            React.createElement(Tool, {code: "line",   tool: tool}) );
+            tool_keys.map(function(t, i) {
+              return React.createElement(Tool, {code: t[0], shortcut: t[1], tool: tool, offset: i})
+            }));
   }
 });
 
@@ -334,13 +336,8 @@ edit_model(global_model().set("figures", Immutable.List.of(
 
 // KEYBOARD
 
-function find_map_entry(map, pred){
-  return Immutable.Iterable(map.entries()).find(function(v) { return pred(v[0], v[1]); });
-}
-
 document.addEventListener("keydown", function(e) {
-  var tool = find_map_entry(tools, function(code,tool) {
-                                     return tool.get("key").charCodeAt(0) === e.keyCode });
+  var tool = tool_keys.find(function(t) { return t[1].charCodeAt(0) === e.keyCode });
   if (tool !== undefined)
     edit_model(global_model().set("tool", tool[0]));
   switch (e.keyCode) {
