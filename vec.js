@@ -27,11 +27,12 @@ var figures = Immutable.Map({
     render: function(fig, model) {
       var selected = model.get("selection"),
           className = selected.contains(fig) ? "figure selected" : "figure";
-      return <rect className = { className }
-                   width     = { fig.get("width")  }
-                   height    = { fig.get("height") }
-                   x         = { fig.get("x")      }
-                   y         = { fig.get("y")      } />;
+      return React.createElement("rect", 
+              { className: className,
+                width:  fig.get("width"),
+                height: fig.get("height"),
+                x:      fig.get("x"),
+                y:      fig.get("y") });
     },
     contains: function(fig, point) {
       return fig.get("x") <= point[0] &&
@@ -54,11 +55,12 @@ var figures = Immutable.Map({
     render: function(fig, model) {
       var selected = model.get("selection"),
           className = selected.contains(fig) ? "figure selected" : "figure";
-      return <ellipse className = { className }
-                      cx        = { fig.get("cx") }
-                      cy        = { fig.get("cy") }
-                      rx        = { fig.get("rx") }
-                      ry        = { fig.get("ry") } />;
+      return React.createElement("ellipse", 
+               { className: className,
+                 cx:        fig.get("cx"),
+                 cy:        fig.get("cy"),
+                 rx:        fig.get("rx"),
+                 ry:        fig.get("ry") })
     },
     contains: function(fig, point) {
       var x = point[0],
@@ -84,11 +86,12 @@ var figures = Immutable.Map({
     render: function(fig, model) {
       var selected = model.get("selection"),
           className = selected.contains(fig) ? "figure selected" : "figure";
-      return <line className = { className }
-                   x1 = { fig.get("x1") }
-                   y1 = { fig.get("y1") }
-                   x2 = { fig.get("x2") }
-                   y2 = { fig.get("y2") } />;
+      return React.createElement("line",
+              { className: className,
+                x1: fig.get("x1"),
+                y1: fig.get("y1"),
+                x2: fig.get("x2"),
+                y2: fig.get("y2") });
     },
     contains: function(fig, point) {
       var x1 = fig.get("x1"),
@@ -133,6 +136,7 @@ function dispatch(fig, fn) {
   }
 }
 
+
 // TOOLBAR
 
 function fig_drag_fn(fig) {
@@ -173,24 +177,23 @@ var Tool = React.createClass({
         tool = tools.get(code),
         offset = 40 * tool.get("toolbar_offset");
 
-    return <g className={code === this.props.tool ? "selected" : ""}
-              transform={"translate(" + offset + ",0)"}
-              onClick={ function(e){ update(["tool"], code); e.stopPropagation(); } }>
-             <rect  x="0" y="0" width="40" height="40" />
-             <text textAnchor="middle" x="20" y="27">{tool.get("key")}</text>
-           </g>;
+    return React.createElement("g",
+            { className: code === this.props.tool ? "selected" : "",
+              transform: "translate(" + offset + ",0)",
+              onClick:   function(e){ update(["tool"], code); e.stopPropagation(); } },
+            [ React.createElement("rect", {x: 0, y: 0, width: 40, height: 40}),
+              React.createElement("text", {textAnchor: "middle", x: 20, y: 27}, tool.get("key")) ]);
   }
 });
 
 var Toolbar = React.createClass({
   render: function() {
     var tool = this.props.tool;
-    return <g id="toolbar" transform="translate(10,10)">
-      <Tool code="select" tool={tool} />
-      <Tool code="rect"   tool={tool} />
-      <Tool code="oval"   tool={tool} />
-      <Tool code="line"   tool={tool} />
-    </g>
+    return React.createElement("g", {id: "toolbar", transform: "translate(10,10)"},
+        React.createElement(Tool, {code: "select", tool: tool}),
+        React.createElement(Tool, {code: "rect",   tool: tool}),
+        React.createElement(Tool, {code: "oval",   tool: tool}),
+        React.createElement(Tool, {code: "line",   tool: tool}));
   }
 });
 
@@ -241,19 +244,21 @@ function canvas_mouse_up(e) {
 
 var Canvas = React.createClass({
   render: function() {
-    var model = this.props.model;
-    return <svg id="canvas"
-                onMouseDown={ canvas_mouse_down }
-                onMouseMove={ canvas_mouse_move }
-                onMouseUp  ={ canvas_mouse_up }>
-      <Toolbar tool={ model.get("tool") } />
-      { model.get("figures").map(function(fig) { return dispatch(fig, "render", model); }) }
-    </svg>;
+    var model = this.props.model,
+        scene = model.get("figures"),
+        children = scene.map(function(fig) { return dispatch(fig, "render", model) });
+    return React.createElement("svg", 
+             { id: "canvas",
+               onMouseDown: canvas_mouse_down,
+               onMouseMove: canvas_mouse_move,
+               onMouseUp  : canvas_mouse_up },
+             React.createElement(Toolbar, { tool: model.get("tool") }),
+             children);
   }
 });
 
 function render(model) {
-  React.render(<Canvas model={model} />, document.body);
+  React.render(React.createElement(Canvas, { model: model }), document.body);
 }
 
 update(["figures"], Immutable.List.of(
