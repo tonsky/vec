@@ -7,7 +7,7 @@
   <style>
     html, body { margin: 0; height: 100%; -webkit-user-select: none; }
     #canvas { width: 100%; height: 100%; background: #2B303B; }
-    .figure { fill: transparent; stroke: #C0C5CE; stroke-width: 2; }
+    .figure { fill: transparent; stroke: #C0C5CE; stroke-width: 2; stroke-linecap: round; }
     .figure.selected { stroke: #D08361; }
 
     #toolbar > g > rect { fill: transparent; }
@@ -15,6 +15,10 @@
     #toolbar > g > text { fill: #C0C5CE; font: 20px "Fira Sans"; }
     #toolbar > g.selected > rect { fill: #C0C5CE; }
     #toolbar > g.selected > text { fill: #2B303B; }
+
+    #history > rect { fill: #C0C5CE; stroke-width: 2; stroke: #2B303B; stroke-location: outside; }
+    #history > rect.selected { fill: #D08361; }
+
   </style>
 </head>
 <body>

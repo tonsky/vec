@@ -17,23 +17,51 @@ function defmethod(name, dispatch_value, fn) {
 
 // MODEL
 
-var global_model = Immutable.Map({
-  tool: "select",
-  figures: Immutable.List.of(),
-  selection: Immutable.Set.of()
-});
+var model_history = Immutable.List.of(
+  Immutable.Map({
+    tool: "select",
+    figures: Immutable.List.of(),
+    selection: Immutable.Set.of()
+  }));
+var history_at = 0;
 
-function update_silent(path, value) {
-  global_model = global_model.setIn(path, value);
-  return global_model;
+function global_model() {
+  return model_history.get(history_at);
 }
 
-function update(path, value) {
-  update_silent(path, value);
-  render_canvas(global_model);
-  return global_model;
+function push_history(model) {
+  model_history = model_history.setSize(history_at+1).push(model);
+  history_at++;
+  var skip = model_history.size - 10;
+  if (skip > 0) {
+    history_at -= skip;
+    model_history = model_history.skip(skip);
+  }
+  render_canvas();
 }
 
+function edit_model(model) {
+  if (!Immutable.is(model.get("figures"), global_model().get("figures"))) {
+    push_history(model);
+  } else {
+    model_history = model_history.set(history_at, model);
+    render_canvas();
+  }
+}
+
+function undo() {
+  if (history_at > 0) {
+    history_at--;
+    render_canvas();
+  }
+}
+
+function redo() {
+  if (history_at < model_history.size-1) {
+    history_at++;
+    render_canvas();
+  }
+}
 
 // FIGURES
 
@@ -43,44 +71,40 @@ defmulti("figure_from_bb", function(type, bb)   { return type; });
 
 // RECT
 
-defmethod("render_figure", "rect", function(fig, model) {
-  var selected = model.get("selection"),
-      className = selected.contains(fig) ? "figure selected" : "figure";
+defmethod("render_figure", "rect", function(fig, selected) {
   return React.createElement(
           "rect", 
-          { className: className,
-            width:  fig.get("width"),
-            height: fig.get("height"),
-            x:      fig.get("x"),
-            y:      fig.get("y") });
+          { className: selected ? "figure selected" : "figure",
+            width:     fig.get("w"),
+            height:    fig.get("h"),
+            x:         fig.get("x"),
+            y:         fig.get("y") });
 });
 
 defmethod("inside_figure", "rect", function(fig, point) {
-  return fig.get("x") <= point[0] &&
-         fig.get("x") + fig.get("width") >= point[0] &&
-         fig.get("y") <= point[1] &&
-         fig.get("y") + fig.get("height") >= point[1];
+  return fig.get("x")                <= point[0] &&
+         fig.get("x") + fig.get("w") >= point[0] &&
+         fig.get("y")                <= point[1] &&
+         fig.get("y") + fig.get("h") >= point[1];
 });
 
 defmethod("figure_from_bb", "rect", function(type, bb) {
   return Immutable.Map({
-    type:   "rect",
-    x:      Math.min(bb[0], bb[2]),
-    y:      Math.min(bb[1], bb[3]),
-    width:  Math.abs(bb[0] - bb[2]),
-    height: Math.abs(bb[1] - bb[3])
+    type: "rect",
+    x:    Math.min(bb[0], bb[2]),
+    y:    Math.min(bb[1], bb[3]),
+    w:    Math.abs(bb[0] - bb[2]),
+    h:    Math.abs(bb[1] - bb[3])
   });
 });
 
 
 // OVAL
 
-defmethod("render_figure", "oval", function(fig, model) {
-  var selected = model.get("selection"),
-      className = selected.contains(fig) ? "figure selected" : "figure";
+defmethod("render_figure", "oval", function(fig, selected) {
   return React.createElement(
            "ellipse", 
-           { className: className,
+           { className: selected ? "figure selected" : "figure",
              cx:        fig.get("cx"),
              cy:        fig.get("cy"),
              rx:        fig.get("rx"),
@@ -110,15 +134,13 @@ defmethod("figure_from_bb", "oval", function(type, bb) {
 
 // LINE
 
-defmethod("render_figure", "line", function(fig, model) {
-  var selected = model.get("selection"),
-      className = selected.contains(fig) ? "figure selected" : "figure";
+defmethod("render_figure", "line", function(fig, selected) {
   return React.createElement("line",
-          { className: className,
-            x1: fig.get("x1"),
-            y1: fig.get("y1"),
-            x2: fig.get("x2"),
-            y2: fig.get("y2") });
+          { className: selected ? "figure selected" : "figure",
+            x1:        fig.get("x1"),
+            y1:        fig.get("y1"),
+            x2:        fig.get("x2"),
+            y2:        fig.get("y2") });
 });
 
 defmethod("inside_figure", "line", function(fig, point) {
@@ -139,13 +161,7 @@ defmethod("inside_figure", "line", function(fig, point) {
 });
 
 defmethod("figure_from_bb", "line", function(type, bb) {
-  return Immutable.Map({
-    type: "line",
-    x1: bb[0],
-    y1: bb[1],
-    x2: bb[2],
-    y2: bb[3]
-  });
+  return Immutable.Map({ type: "line", x1: bb[0], y1: bb[1], x2: bb[2], y2: bb[3] });
 });
 
 
@@ -160,24 +176,25 @@ var tools = Immutable.Map({
 
 
 defmulti("tool_on_click", function(tool, model, point, e) { return tool; });
-defmulti("tool_on_drag", function(tool, model, bb, e) { return tool; });
+defmulti("tool_on_drag",  function(tool, model, bb, e)    { return tool; });
 
-defmethod("tool_on_click", "select", function(tool, model, point, e) {
-  var pred      = function(fig) { return inside_figure(fig, point) },
-      fig       = model.get("figures").find(pred),
-      multi     = e.shiftKey,
-      selection = model.get("selection");
-  if (fig !== undefined && multi && selection.contains(fig))
-    return model.set("selection", selection.delete(fig));
-  else if (fig !== undefined && multi && !selection.contains(fig))
-    return model.set("selection", selection.add(fig));
-  else if (fig !== undefined && !multi)
-    return model.set("selection", Immutable.Set.of(fig));
-  else if (fig === undefined && !multi)
-    return model.set("selection", Immutable.Set.of());
-  else
-    return model;
-});
+defmethod("tool_on_click", "select",
+  function(tool, model, point, e) {
+    var pred      = function(fig) { return inside_figure(fig, point) },
+        fig       = model.get("figures").find(pred),
+        multi     = e.shiftKey,
+        selection = model.get("selection");
+    if (fig !== undefined && multi && selection.contains(fig))
+      return model.set("selection", selection.delete(fig));
+    else if (fig !== undefined && multi && !selection.contains(fig))
+      return model.set("selection", selection.add(fig));
+    else if (fig !== undefined && !multi)
+      return model.set("selection", Immutable.Set.of(fig));
+    else if (fig === undefined && !multi)
+      return model.set("selection", Immutable.Set.of());
+    else
+      return model;
+  });
 
 function fig_drag_fn(tool, model, bb, e) {
     var scene = model.get("figures");
@@ -201,7 +218,10 @@ var Tool = React.createClass({
     return React.createElement("g",
             { className: code === this.props.tool ? "selected" : "",
               transform: "translate(" + offset + ",0)",
-              onClick:   function(e){ update(["tool"], code); e.stopPropagation(); } },
+              onClick:   function(e) {
+                           edit_model(global_model().set("tool", code));
+                           e.stopPropagation();
+                         } },
             React.createElement("rect", {x: 0, y: 0, width: 40, height: 40}),
             React.createElement("text", {textAnchor: "middle", x: 20, y: 27}, tool.get("key")));
   }
@@ -210,81 +230,106 @@ var Tool = React.createClass({
 var Toolbar = React.createClass({
   render: function() {
     var tool = this.props.tool;
-    return React.createElement("g", {id: "toolbar", transform: "translate(10,10)"},
-        React.createElement(Tool, {code: "select", tool: tool}),
-        React.createElement(Tool, {code: "rect",   tool: tool}),
-        React.createElement(Tool, {code: "oval",   tool: tool}),
-        React.createElement(Tool, {code: "line",   tool: tool}));
+    return React.createElement("g",
+            { id: "toolbar", transform: "translate(10,10)" },
+            React.createElement(Tool, {code: "select", tool: tool}),
+            React.createElement(Tool, {code: "rect",   tool: tool}),
+            React.createElement(Tool, {code: "oval",   tool: tool}),
+            React.createElement(Tool, {code: "line",   tool: tool}) );
   }
 });
 
 
 // CANVAS
 
+var click_pos, drag_pos;
+
 function canvas_mouse_down(e) {
-  if (global_model.get("touch-start") === undefined)
-    update_silent(["touch-start"], [e.clientX, e.clientY]);
+  if (click_pos === undefined)
+    click_pos = [e.clientX, e.clientY];
 }
 
 function canvas_mouse_move(e) {
-  var start = global_model.get("touch-start");
-  if (start !== undefined && (start[0] !== e.clientX || start[1] !== e.clientY)) {
-    update_silent(["touch-end"], [e.clientX, e.clientY]);
-    var bb    = [start[0], start[1], e.clientX, e.clientY],
-        tool  = global_model.get("tool"),
-        model = tool_on_drag(tool, global_model, bb, e);
-    if (model !== undefined)
-      render_canvas(model);
+  if (click_pos !== undefined && (click_pos[0] !== e.clientX || click_pos[1] !== e.clientY)) {
+    drag_pos = [e.clientX, e.clientY];
+    var model     = global_model(),
+        bb        = [click_pos[0], click_pos[1], e.clientX, e.clientY],
+        tool      = model.get("tool"),
+        new_model = tool_on_drag(tool, model, bb, e);
+    if (new_model !== undefined)
+      render_canvas(new_model);
   }
 }
 
 function canvas_mouse_up(e) {
-  var start = global_model.get("touch-start"),
-      end   = global_model.get("touch-end"),
-      tool  = global_model.get("tool");
-  update_silent(["touch-start"], undefined);
-  update_silent(["touch-end"], undefined);
-
-  if (end !== undefined) {
-    var bb    = [start[0], start[1], e.clientX, e.clientY],
-        model = tool_on_drag(tool, global_model, bb, e);
-    if (model !== undefined) {
-      global_model = model;
-      render_canvas(global_model);
-    }
-  } else {
-    var model = tool_on_click(tool, global_model, start, e);
-    if (model !== undefined) {
-      global_model = model;
-      render_canvas(global_model);
+  var model = global_model(),
+      tool  = model.get("tool");
+  if (click_pos !== undefined) {
+    if (drag_pos !== undefined) {
+      var bb    = [click_pos[0], click_pos[1], e.clientX, e.clientY],
+          new_model = tool_on_drag(tool, model, bb, e);
+      if (new_model !== undefined)
+        edit_model(new_model);
+    } else {
+      var new_model = tool_on_click(tool, model, click_pos, e);
+      if (new_model !== undefined)
+        edit_model(new_model);
     }
   }
+  click_pos = undefined;
+  drag_pos  = undefined;
 }
+
+var Scene = React.createClass({
+  render: function() {
+    var figures   = this.props.figures,
+        selection = this.props.selection,
+        render    = function(fig) { return render_figure(fig, selection.contains(fig)); };
+    return React.createElement("g", {}, figures.map(render));
+  }
+});
+
+var History = React.createClass({
+  render: function() {
+    var at   = this.props.history_at,
+      render = function(m, i) {
+      return React.createElement("rect", { 
+        className:   i === at ? "selected" : "",
+        x:           i*14 + 10,
+        y:           document.body.clientHeight-20,
+        width:       12,
+        height:      12,
+        onClick:     function(e) { history_at = i; render_canvas(); },
+        onMouseOver: function(e) { render_canvas(model_history.get(i)); },
+        onMouseOut:  function(e) { render_canvas(); },
+      });
+    };
+    return React.createElement("g", { id: "history" }, this.props.history.map(render));
+  }
+});
 
 var Canvas = React.createClass({
   render: function() {
-    var model = this.props.model,
-        scene = model.get("figures"),
-        children = scene.map(function(fig) { return render_figure(fig, model); });
-    return React.createElement("svg", 
-             { id: "canvas",
-               onMouseDown: canvas_mouse_down,
-               onMouseMove: canvas_mouse_move,
-               onMouseUp  : canvas_mouse_up },
+    var model = this.props.model;
+    return React.createElement("svg",
+             { id: "canvas" },
              React.createElement(Toolbar, { tool: model.get("tool") }),
-             children);
+             React.createElement(History, { history: model_history, history_at: history_at }),
+             React.createElement(Scene,
+               { figures:   model.get("figures"),
+                 selection: model.get("selection") }));
   }
 });
 
 function render_canvas(model) {
-  React.render(React.createElement(Canvas, { model: model }), document.body);
+  React.render(React.createElement(Canvas, { model: model || global_model() }), document.body);
 }
 
-update(["figures"], Immutable.List.of(
+edit_model(global_model().set("figures", Immutable.List.of(
   figure_from_bb("rect", [100, 100, 261.8, 200]),
   figure_from_bb("rect", [180, 120, 280, 281]),
   figure_from_bb("rect", [140, 300, 201.8, 400])
-));
+)));
 
 
 // KEYBOARD
@@ -295,21 +340,31 @@ function find_map_entry(map, pred){
 
 document.addEventListener("keydown", function(e) {
   var tool = find_map_entry(tools, function(code,tool) {
-                                     return tool.get("key").charCodeAt(0) == e.keyCode });
+                                     return tool.get("key").charCodeAt(0) === e.keyCode });
   if (tool !== undefined)
-    update(["tool"], tool[0]);
+    edit_model(global_model().set("tool", tool[0]));
   switch (e.keyCode) {
     case 27: // escape
-      update_silent(["touch-start"], undefined);
-      update(["touch-end"], undefined);
+      click_pos = undefined;
+      drag_pos  = undefined;
+      render_canvas();
       break;
     case 8:  // backspace
     case 46: // delete
-      var scene = global_model.get("figures"),
-          selection = global_model.get("selection");
-      update(["figures"], scene.filterNot(function(fig) { return selection.contains(fig); }));
+      var model = global_model(),
+          scene = model.get("figures"),
+          selection = model.get("selection"),
+          selected  = function(fig) { return selection.contains(fig); };
+      edit_model(model.set("figures", scene.filterNot(selected)));
       e.preventDefault();
+      break;
+    case 90: // Z
+      if (e.metaKey || e.ctrlKey) {
+        if (e.shiftKey) redo(); else undo();
+      }
       break;
   }
 });
-
+document.addEventListener("mousedown", canvas_mouse_down);
+document.addEventListener("mousemove", canvas_mouse_move);
+document.addEventListener("mouseup", canvas_mouse_up);
