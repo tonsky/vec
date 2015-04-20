@@ -246,16 +246,22 @@ var Toolbar = React.createClass({
 
 var click_pos, drag_pos;
 
+function mouse_pos(e) {
+  return [10 * Math.round(e.clientX / 10),
+          10 * Math.round(e.clientY / 10)];
+}
+
 function canvas_mouse_down(e) {
   if (click_pos === undefined)
-    click_pos = [e.clientX, e.clientY];
+    click_pos = mouse_pos(e);
 }
 
 function canvas_mouse_move(e) {
-  if (click_pos !== undefined && (click_pos[0] !== e.clientX || click_pos[1] !== e.clientY)) {
-    drag_pos = [e.clientX, e.clientY];
+  var pos = mouse_pos(e);
+  if (click_pos !== undefined && (click_pos[0] !== pos[0] || click_pos[1] !== pos[1])) {
+    drag_pos = pos;
     var model     = global_model(),
-        bb        = [click_pos[0], click_pos[1], e.clientX, e.clientY],
+        bb        = [click_pos[0], click_pos[1], drag_pos[0], drag_pos[1]],
         tool      = model.get("tool"),
         new_model = tool_on_drag(tool, model, bb, e);
     if (new_model !== undefined)
@@ -268,7 +274,7 @@ function canvas_mouse_up(e) {
       tool  = model.get("tool");
   if (click_pos !== undefined) {
     if (drag_pos !== undefined) {
-      var bb    = [click_pos[0], click_pos[1], e.clientX, e.clientY],
+      var bb    = [click_pos[0], click_pos[1], drag_pos[0], drag_pos[1]],
           new_model = tool_on_drag(tool, model, bb, e);
       if (new_model !== undefined)
         edit_model(new_model);
@@ -328,9 +334,9 @@ function render_canvas(model) {
 }
 
 edit_model(global_model().set("figures", Immutable.List.of(
-  figure_from_bb("rect", [100, 100, 261.8, 200]),
-  figure_from_bb("rect", [180, 120, 280, 281]),
-  figure_from_bb("rect", [140, 300, 201.8, 400])
+  figure_from_bb("rect", [100, 100, 260, 200]),
+  figure_from_bb("rect", [180, 120, 280, 280]),
+  figure_from_bb("rect", [140, 300, 200, 400])
 )));
 
 
