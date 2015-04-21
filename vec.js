@@ -47,12 +47,14 @@ function edit_model(model) {
     model_history = model_history.set(history_at, model);
     render_canvas();
   }
+  persist();
 }
 
 function undo() {
   if (history_at > 0) {
     history_at--;
     render_canvas();
+    persist();
   }
 }
 
@@ -60,19 +62,57 @@ function redo() {
   if (history_at < model_history.size-1) {
     history_at++;
     render_canvas();
+    persist();
   }
+}
+
+function persist (argument) {
+  localStorage.setItem("vec/world", JSON.stringify(world_to_js()));
+}
+
+function world_to_js() {
+  var cache = Immutable.List.of(),
+      obj_id = function (o) {
+                 var idx = cache.indexOf(o);
+                 if (idx === -1) {
+                   cache = cache.push(o);
+                   return cache.size - 1;
+                 } else
+                   return idx;
+               },
+      models = [];
+  model_history.forEach(function(model, i) {
+    models.push( { tool:      model.get("tool"),
+                   selection: model.get("selection").map(obj_id).toArray(),
+                   figures:   model.get("figures").map(obj_id).toArray() });
+  });
+  return { models: models,
+           history_at: history_at,
+           figures: cache.map(function(o) { return o.toJS(); }).toArray() };
+}
+
+function world_from_js(json) {
+  var figures = Immutable.List(json.figures).map(Immutable.Map),
+      get_fig = function(i) { return figures.get(i); },
+      models  = Immutable.List(json.models).map(function(m) {
+        return Immutable.Map({
+          tool: m.tool,
+          selection: Immutable.List(m.selection).map(get_fig),
+          figures:   Immutable.List(m.figures).map(get_fig)
+      })});
+  model_history = models;
+  history_at = json.history_at;
+  render_canvas();
 }
 
 // FIGURES
 
 defmulti("render_figure",  function(fig, model)  { return fig.get("type"); });
 defmulti("inside_figure",  function(fig, point)  { return fig.get("type"); });
-defmulti("figure_from_bb", function(type, bb)    { return type; });
 defmulti("move_figure",    function(fig, delta)  { return fig.get("type"); });
+defmulti("figure_from_bb", function(type, bb)    { return type; });
 
 // RECT
-
-var Rect = Immutable.Record({x:0, y:0, w:0, h:0, type: "rect"});
 
 defmethod("render_figure", "rect", function(fig, selected) {
   return React.createElement(
@@ -92,7 +132,8 @@ defmethod("inside_figure", "rect", function(fig, point) {
 });
 
 defmethod("figure_from_bb", "rect", function(type, bb) {
-  return new Rect({
+  return Immutable.Map({
+    type: "rect",
     x: Math.min(bb[0], bb[2]),
     y: Math.min(bb[1], bb[3]),
     w: Math.abs(bb[0] - bb[2]),
@@ -101,7 +142,8 @@ defmethod("figure_from_bb", "rect", function(type, bb) {
 });
 
 defmethod("move_figure", "rect", function(fig, delta) {
-  return new Rect({
+  return Immutable.Map({
+    type: "rect",
     x: fig.get("x") + delta[0],
     y: fig.get("y") + delta[1],
     w: fig.get("w"),
@@ -111,8 +153,6 @@ defmethod("move_figure", "rect", function(fig, delta) {
 
 
 // OVAL
-
-var Oval = Immutable.Record({cx:0, cy:0, rx:0, ry:0, type: "oval"});
 
 defmethod("render_figure", "oval", function(fig, selected) {
   return React.createElement(
@@ -135,7 +175,8 @@ defmethod("inside_figure", "oval", function(fig, point) {
 });
 
 defmethod("figure_from_bb", "oval", function(type, bb) {
-  return new Oval({
+  return Immutable.Map({
+    type: "oval",
     cx: (bb[0] + bb[2])/2,
     cy: (bb[1] + bb[3])/2,
     rx: Math.abs(bb[0] - bb[2])/2,
@@ -144,7 +185,8 @@ defmethod("figure_from_bb", "oval", function(type, bb) {
 });
 
 defmethod("move_figure", "oval", function(fig, delta) {
-  return new Oval({
+  return Immutable.Map({
+    type: "oval",
     cx: fig.get("cx") + delta[0],
     cy: fig.get("cy") + delta[1],
     rx: fig.get("rx"),
@@ -154,8 +196,6 @@ defmethod("move_figure", "oval", function(fig, delta) {
 
 
 // LINE
-
-var Line = Immutable.Record({x1:0, y1:0, x2:0, y2:0, type: "line"});
 
 defmethod("render_figure", "line", function(fig, selected) {
   return React.createElement("line",
@@ -184,17 +224,19 @@ defmethod("inside_figure", "line", function(fig, point) {
 });
 
 defmethod("figure_from_bb", "line", function(type, bb) {
-  return new Line({ x1: bb[0], y1: bb[1], x2: bb[2], y2: bb[3] });
+  return Immutable.Map({ type: "line", x1: bb[0], y1: bb[1], x2: bb[2], y2: bb[3] });
 });
 
 defmethod("move_figure", "line", function(fig, delta) {
-  return new Line({
+  return Immutable.Map({ 
+    type: "line", 
     x1: fig.get("x1") + delta[0],
     y1: fig.get("y1") + delta[1],
     x2: fig.get("x2") + delta[0],
     y2: fig.get("y2") + delta[1]
   });
 });
+
 
 // TOOLBAR
 
@@ -386,28 +428,35 @@ function render_canvas(model) {
   React.render(React.createElement(Canvas, { model: model || global_model() }), document.body);
 }
 
-Immutable.List.of(
-  figure_from_bb("oval", [110, 115, 120, 125]),
-  figure_from_bb("oval", [130, 115, 140, 125]),
-  figure_from_bb("oval", [150, 115, 160, 125]),
-  figure_from_bb("line", [100, 140, 170, 140]),
-  figure_from_bb("line", [170, 140, 180, 110]),
-  figure_from_bb("line", [180, 110, 280, 110]),
-  figure_from_bb("line", [280, 110, 290, 140]),
-  figure_from_bb("line", [290, 140, 600, 140]),
-  figure_from_bb("line", [100, 180, 600, 180]),
-  figure_from_bb("rect", [100, 100, 600, 400])
-).forEach(function(fig) {
-  edit_model(global_model().set("figures", global_model().get("figures").push(fig)));
-});
+var stored = localStorage.getItem("vec/world");
 
+if (stored !== undefined) {
+  world_from_js(JSON.parse(stored));
+} else {
+  Immutable.List.of(
+    figure_from_bb("oval", [110, 115, 120, 125]),
+    figure_from_bb("oval", [130, 115, 140, 125]),
+    figure_from_bb("oval", [150, 115, 160, 125]),
+    figure_from_bb("line", [100, 140, 170, 140]),
+    figure_from_bb("line", [170, 140, 180, 110]),
+    figure_from_bb("line", [180, 110, 280, 110]),
+    figure_from_bb("line", [280, 110, 290, 140]),
+    figure_from_bb("line", [290, 140, 600, 140]),
+    figure_from_bb("line", [100, 180, 600, 180]),
+    figure_from_bb("rect", [100, 100, 600, 400])
+  ).forEach(function(fig) {
+    edit_model(global_model().set("figures", global_model().get("figures").push(fig)));
+  });
+}
 
 // KEYBOARD
 
 document.addEventListener("keydown", function(e) {
-  var tool = tool_keys.find(function(t) { return t[1].charCodeAt(0) === e.keyCode });
-  if (tool !== undefined)
-    edit_model(global_model().set("tool", tool[0]));
+  if (!e.ctrlKey && !e.shiftKey && !e.metaKey) {
+    var tool = tool_keys.find(function(t) { return t[1].charCodeAt(0) === e.keyCode });
+    if (tool !== undefined)
+      edit_model(global_model().set("tool", tool[0]));
+  }
   switch (e.keyCode) {
     case 27: // escape
       click_pos = undefined;
@@ -433,3 +482,7 @@ document.addEventListener("keydown", function(e) {
 document.addEventListener("mousedown", canvas_mouse_down);
 document.addEventListener("mousemove", canvas_mouse_move);
 document.addEventListener("mouseup", canvas_mouse_up);
+
+
+
+
