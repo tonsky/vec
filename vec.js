@@ -109,8 +109,18 @@ function world_from_js(json) {
 
 defmulti("render_figure",  function(fig, model)  { return fig.get("type"); });
 defmulti("inside_figure",  function(fig, point)  { return fig.get("type"); });
+defmulti("inside_stroke",  function(fig, point)  { return fig.get("type"); });
 defmulti("move_figure",    function(fig, delta)  { return fig.get("type"); });
 defmulti("figure_from_bb", function(type, bb)    { return type; });
+
+function find_selected(figures, point) {
+  var by_stroke = figures.find(function(fig) { return inside_stroke(fig, point); });
+  // if (by_stroke !== undefined)
+    return by_stroke;
+  // return figures.find(function(fig) { return inside_figure(fig, point); });
+}
+
+var selection_treshold = 8;
 
 // RECT
 
@@ -129,6 +139,23 @@ defmethod("inside_figure", "rect", function(fig, point) {
          fig.get("x") + fig.get("w") >= point[0] &&
          fig.get("y")                <= point[1] &&
          fig.get("y") + fig.get("h") >= point[1];
+});
+
+defmethod("inside_stroke", "rect", function(fig, point) {
+  var x1 = fig.get("x"),
+      y1 = fig.get("y"),
+      x2 = fig.get("x") + fig.get("w"),
+      y2 = fig.get("y") + fig.get("h"),
+      x  = point[0],
+      y  = point[1],
+      t  = selection_treshold;
+
+  return (  y1 - t <= y && y <= y2 + t &&
+          ((x1 - t <= x && x <= x1 + t) ||
+           (x2 - t <= x && x <= x2 + t))) || 
+         (  x1 - t <= x && x <= x2 + t &&
+          ((y1 - t <= y && y <= y1 + t) ||
+           (y2 - t <= y && y <= y2 + t)));
 });
 
 defmethod("figure_from_bb", "rect", function(type, bb) {
@@ -164,15 +191,28 @@ defmethod("render_figure", "oval", function(fig, selected) {
              ry:        fig.get("ry") });
 });
 
+
+function inside_ellipse(x, y, cx, cy, rx, ry) {
+  return (x-cx)*(x-cx)/(rx*rx) + (y-cy)*(y-cy)/(ry*ry) <= 1;
+}
+
 defmethod("inside_figure", "oval", function(fig, point) {
+  return inside_ellipse(point[0], point[1], fig.get("cx"), fig.get("cy"), fig.get("rx"), fig.get("ry"));
+});
+
+
+defmethod("inside_stroke", "oval", function(fig, point) {
   var x = point[0],
       y = point[1],
       cx = fig.get("cx"),
       cy = fig.get("cy"),
       rx = fig.get("rx"),
-      ry = fig.get("ry");
-  return (x-cx)*(x-cx)/(rx*rx) + (y-cy)*(y-cy)/(ry*ry) <= 1;
+      ry = fig.get("ry"),
+      t  = selection_treshold;
+  return inside_ellipse(x, y, cx, cy, rx+t, ry+t) && (rx <= t || ry <= t || !inside_ellipse(x, y, cx, cy, rx-t, ry-t));
 });
+
+
 
 defmethod("figure_from_bb", "oval", function(type, bb) {
   return Immutable.Map({
@@ -206,21 +246,20 @@ defmethod("render_figure", "line", function(fig, selected) {
             y2:        fig.get("y2") });
 });
 
-defmethod("inside_figure", "line", function(fig, point) {
+defmethod("inside_stroke", "line", function(fig, point) {
   var x1 = fig.get("x1"),
       y1 = fig.get("y1"),
       x2 = fig.get("x2"),
       y2 = fig.get("y2"),
       x  = point[0],
-      y  = point[1],
-      d  = Math.abs((y2 - y1) * x - (x2 - x1) * y + x2 * y1 - y2 * x1) /
-           Math.sqrt((y2-y1) * (y2-y1) + (x2 - x1) * (x2 - x1));
+      y  = point[1];
 
-  return Math.min(x1, x2) <= x &&
-         Math.max(x1, x2) >= x &&
-         Math.min(y1, y2) <= y &&
-         Math.max(y1, y2) >= y &&
-         d <= 10;
+  if (Math.min(x1, x2) <= x &&
+      Math.max(x1, x2) >= x &&
+      Math.min(y1, y2) <= y &&
+      Math.max(y1, y2) >= y)
+    return Math.abs((y2 - y1) * x - (x2 - x1) * y + x2 * y1 - y2 * x1) /
+           Math.sqrt((y2-y1) * (y2-y1) + (x2 - x1) * (x2 - x1)) <= selection_treshold;
 });
 
 defmethod("figure_from_bb", "line", function(type, bb) {
@@ -252,8 +291,7 @@ defmulti("tool_on_drag",  function(tool, model, bb, e)    { return tool; });
 
 defmethod("tool_on_click", "select",
   function(tool, model, point, e) {
-    var pred      = function(fig) { return inside_figure(fig, point) },
-        fig       = model.get("figures").find(pred),
+    var fig       = find_selected(model.get("figures"), point),
         multi     = e.shiftKey,
         selection = model.get("selection");
     if (fig !== undefined && multi && selection.contains(fig))
@@ -270,19 +308,18 @@ defmethod("tool_on_drag", "select",
   function(tool, model, bb, e) {
     var start     = [bb[0], bb[1]],
         delta     = [bb[2] - bb[0], bb[3] - bb[1]],
-        pred      = function(fig) { return inside_figure(fig, start) },
         selection = model.get("selection"),
         scene     = model.get("figures");
 
-    if (selection.find(pred) === undefined) {
-      var fig = scene.find(pred);
+    if (find_selected(selection, start) === undefined) {
+      var fig = find_selected(scene, start);
       if (fig !== undefined) {
         selection = Immutable.Set.of(fig);
         model = model.set("selection", selection);
       }
     }
 
-    if (selection.find(pred) !== undefined) {
+    if (find_selected(selection, start) !== undefined) {
       return model
              .set("figures", scene.map(function(fig) {
                return selection.contains(fig) ? move_figure(fig, delta) : fig;
