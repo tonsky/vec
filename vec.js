@@ -520,6 +520,6 @@ document.addEventListener("mousedown", canvas_mouse_down);
 document.addEventListener("mousemove", canvas_mouse_move);
 document.addEventListener("mouseup", canvas_mouse_up);
 
-
+window.addEventListener("resize", function(e) { render_canvas() });
 
 
