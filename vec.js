@@ -345,13 +345,16 @@ defmethod("tool_on_drag", "line", fig_drag_fn);
 
 
 var Tool = React.createClass({
+  shouldComponentUpdate: function(next_props) {
+    return should_update("    Tool_" + this.props.code, this.props, next_props, ["code", "shortcut", "offset", "selected"]);
+  },
   render: function() {
     var code     = this.props.code,
         shortcut = this.props.shortcut,
         offset   = 40 * this.props.offset;
 
     return React.createElement("g",
-            { className: "tool_" + code + (code === this.props.tool ? " selected" : ""),
+            { className: "tool_" + code + (this.props.selected ? " selected" : ""),
               transform: "translate(" + offset + ",0)",
               onClick:   function(e) {
                            edit_model(global_model().set("tool", code));
@@ -363,12 +366,15 @@ var Tool = React.createClass({
 });
 
 var Toolbar = React.createClass({
+  shouldComponentUpdate: function(next_props) {
+    return should_update("  Toolbar", this.props, next_props, ["tool"]);
+  },
   render: function() {
     var tool = this.props.tool;
     return React.createElement("g",
             { id: "toolbar", transform: "translate(10,10)" },
             tool_keys.map(function(t, i) {
-              return React.createElement(Tool, {code: t[0], shortcut: t[1], tool: tool, offset: i})
+              return React.createElement(Tool, {code: t[0], shortcut: t[1], selected: tool === t[0], offset: i})
             }));
   }
 });
@@ -376,7 +382,13 @@ var Toolbar = React.createClass({
 
 // CANVAS
 
-var click_pos, drag_pos;
+function current_viewport() {
+  return Immutable.Map({w: document.body.clientWidth, h: document.body.clientHeight});
+}
+
+var viewport = current_viewport(), 
+    click_pos,
+    drag_pos;
 
 function mouse_pos(e) {
   return [10 * Math.round(e.clientX / 10),
@@ -420,7 +432,22 @@ function canvas_mouse_up(e) {
   drag_pos  = undefined;
 }
 
+function should_update(name, from, to, props) {
+  for (var i = 0; i < props.length; ++i) {
+    var prop = props[i];
+    if (!Immutable.is(from[prop], to[prop])) {
+      // console.log(name + "." + prop + " changed");
+      return true;
+    }
+  };
+  // console.log(name + " // skip");
+  return false;
+}
+
 var Scene = React.createClass({
+  shouldComponentUpdate: function(next_props) {
+    return should_update("  Scene", this.props, next_props, ["figures", "selection"]);
+  },
   render: function() {
     var figures   = this.props.figures,
         selection = this.props.selection,
@@ -430,31 +457,39 @@ var Scene = React.createClass({
 });
 
 var History = React.createClass({
+  shouldComponentUpdate: function(next_props) {
+    return should_update("  History", this.props, next_props, ["history", "history_at", "viewport"]);
+  },
   render: function() {
-    var at   = this.props.history_at,
-      render = function(m, i) {
-      return React.createElement("rect", { 
-        className:   i === at ? "selected" : "",
-        x:           i*14 + 10,
-        y:           document.body.clientHeight-20,
-        width:       12,
-        height:      12,
-        onClick:     function(e) { history_at = i; render_canvas(); },
-        onMouseOver: function(e) { render_canvas(model_history.get(i)); },
-        onMouseOut:  function(e) { render_canvas(); },
-      });
-    };
+    var at       = this.props.history_at,
+        viewport = this.props.viewport,
+        render   = function(m, i) {
+                     return React.createElement("rect", { 
+                       className:   i === at ? "selected" : "",
+                       x:           i*14 + 10,
+                       y:           viewport.get("h") - 20,
+                       width:       12,
+                       height:      12,
+                       onClick:     function(e) { history_at = i; render_canvas(); },
+                       onMouseOver: function(e) { render_canvas(model_history.get(i)); },
+                       onMouseOut:  function(e) { render_canvas(); },
+                     });
+                   };
     return React.createElement("g", { id: "history" }, this.props.history.map(render));
   }
 });
 
 var Canvas = React.createClass({
+  shouldComponentUpdate: function(next_props) {
+    return should_update("Canvas", this.props, next_props, ["model", "viewport"]);
+  },
   render: function() {
-    var model = this.props.model;
+    var model  = this.props.model,
+        viewport = this.props.viewport;
     return React.createElement("svg",
              { id: "canvas" },
              React.createElement(Toolbar, { tool: model.get("tool") }),
-             React.createElement(History, { history: model_history, history_at: history_at }),
+             React.createElement(History, { history: model_history, history_at: history_at, viewport: viewport }),
              React.createElement(Scene,
                { figures:   model.get("figures"),
                  selection: model.get("selection") }));
@@ -462,7 +497,10 @@ var Canvas = React.createClass({
 });
 
 function render_canvas(model) {
-  React.render(React.createElement(Canvas, { model: model || global_model() }), document.body);
+  React.render(
+    React.createElement(Canvas, { model:    (model || global_model()),
+                                  viewport: window.viewport }),
+    document.body);
 }
 
 var stored = localStorage.getItem("vec/world");
@@ -519,7 +557,6 @@ document.addEventListener("keydown", function(e) {
 document.addEventListener("mousedown", canvas_mouse_down);
 document.addEventListener("mousemove", canvas_mouse_move);
 document.addEventListener("mouseup", canvas_mouse_up);
-
-window.addEventListener("resize", function(e) { render_canvas() });
+window.addEventListener("resize", function(e) { viewport = current_viewport(); render_canvas(); } );
 
 
