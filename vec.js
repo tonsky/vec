@@ -232,7 +232,15 @@ defmethod("tool_on_drag", "select",
         selection = model.get("selection"),
         scene     = model.get("figures");
 
-    if (model.get("selection").find(pred) !== undefined) {
+    if (selection.find(pred) === undefined) {
+      var fig = scene.find(pred);
+      if (fig !== undefined) {
+        selection = Immutable.Set.of(fig);
+        model = model.set("selection", selection);
+      }
+    }
+
+    if (selection.find(pred) !== undefined) {
       return model
              .set("figures", scene.map(function(fig) {
                return selection.contains(fig) ? move_figure(fig, delta) : fig;
