@@ -107,11 +107,11 @@ function world_from_js(json) {
 
 // FIGURES
 
-defmulti("render_figure",  function(fig, model)  { return fig.get("type"); });
-defmulti("inside_figure",  function(fig, point)  { return fig.get("type"); });
-defmulti("inside_stroke",  function(fig, point)  { return fig.get("type"); });
-defmulti("move_figure",    function(fig, delta)  { return fig.get("type"); });
-defmulti("figure_from_bb", function(type, bb)    { return type; });
+defmulti("render_figure",  function(fig, selected, key) { return fig.get("type"); });
+defmulti("inside_figure",  function(fig, point)         { return fig.get("type"); });
+defmulti("inside_stroke",  function(fig, point)         { return fig.get("type"); });
+defmulti("move_figure",    function(fig, delta)         { return fig.get("type"); });
+defmulti("figure_from_bb", function(type, bb)           { return type; });
 
 function find_selected(figures, point) {
   var by_stroke = figures.find(function(fig) { return inside_stroke(fig, point); });
@@ -124,10 +124,11 @@ var selection_treshold = 8;
 
 // RECT
 
-defmethod("render_figure", "rect", function(fig, selected) {
+defmethod("render_figure", "rect", function(fig, selected, key) {
   return React.createElement(
           "rect", 
-          { className: selected ? "figure selected" : "figure",
+          { key: key,
+            className: selected ? "figure selected" : "figure",
             width:     fig.get("w"),
             height:    fig.get("h"),
             x:         fig.get("x"),
@@ -181,10 +182,11 @@ defmethod("move_figure", "rect", function(fig, delta) {
 
 // OVAL
 
-defmethod("render_figure", "oval", function(fig, selected) {
+defmethod("render_figure", "oval", function(fig, selected, key) {
   return React.createElement(
            "ellipse", 
-           { className: selected ? "figure selected" : "figure",
+           { key: key,
+             className: selected ? "figure selected" : "figure",
              cx:        fig.get("cx"),
              cy:        fig.get("cy"),
              rx:        fig.get("rx"),
@@ -237,9 +239,10 @@ defmethod("move_figure", "oval", function(fig, delta) {
 
 // LINE
 
-defmethod("render_figure", "line", function(fig, selected) {
+defmethod("render_figure", "line", function(fig, selected, key) {
   return React.createElement("line",
-          { className: selected ? "figure selected" : "figure",
+          { key: key,
+            className: selected ? "figure selected" : "figure",
             x1:        fig.get("x1"),
             y1:        fig.get("y1"),
             x2:        fig.get("x2"),
@@ -374,7 +377,7 @@ var Toolbar = React.createClass({
     return React.createElement("g",
             { id: "toolbar", transform: "translate(10,10)" },
             tool_keys.map(function(t, i) {
-              return React.createElement(Tool, {code: t[0], shortcut: t[1], selected: tool === t[0], offset: i})
+              return React.createElement(Tool, {key: t[0], code: t[0], shortcut: t[1], selected: tool === t[0], offset: i})
             }));
   }
 });
@@ -451,7 +454,7 @@ var Scene = React.createClass({
   render: function() {
     var figures   = this.props.figures,
         selection = this.props.selection,
-        render    = function(fig) { return render_figure(fig, selection.contains(fig)); };
+        render    = function(fig, i) { return render_figure(fig, selection.contains(fig), i); };
     return React.createElement("g", {}, figures.map(render));
   }
 });
@@ -464,7 +467,8 @@ var History = React.createClass({
     var at       = this.props.history_at,
         viewport = this.props.viewport,
         render   = function(m, i) {
-                     return React.createElement("rect", { 
+                     return React.createElement("rect", {
+                       key:         i,
                        className:   i === at ? "selected" : "",
                        x:           i*14 + 10,
                        y:           viewport.get("h") - 20,
