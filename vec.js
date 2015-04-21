@@ -65,9 +65,10 @@ function redo() {
 
 // FIGURES
 
-defmulti("render_figure",  function(fig, model) { return fig.get("type"); });
-defmulti("inside_figure",  function(fig, point) { return fig.get("type"); });
-defmulti("figure_from_bb", function(type, bb)   { return type; });
+defmulti("render_figure",  function(fig, model)  { return fig.get("type"); });
+defmulti("inside_figure",  function(fig, point)  { return fig.get("type"); });
+defmulti("figure_from_bb", function(type, bb)    { return type; });
+defmulti("move_figure",    function(fig, delta)  { return fig.get("type"); });
 
 // RECT
 
@@ -96,6 +97,15 @@ defmethod("figure_from_bb", "rect", function(type, bb) {
     y: Math.min(bb[1], bb[3]),
     w: Math.abs(bb[0] - bb[2]),
     h: Math.abs(bb[1] - bb[3])
+  });
+});
+
+defmethod("move_figure", "rect", function(fig, delta) {
+  return new Rect({
+    x: fig.get("x") + delta[0],
+    y: fig.get("y") + delta[1],
+    w: fig.get("w"),
+    h: fig.get("h")
   });
 });
 
@@ -130,6 +140,15 @@ defmethod("figure_from_bb", "oval", function(type, bb) {
     cy: (bb[1] + bb[3])/2,
     rx: Math.abs(bb[0] - bb[2])/2,
     ry: Math.abs(bb[1] - bb[3])/2
+  });
+});
+
+defmethod("move_figure", "oval", function(fig, delta) {
+  return new Oval({
+    cx: fig.get("cx") + delta[0],
+    cy: fig.get("cy") + delta[1],
+    rx: fig.get("rx"),
+    ry: fig.get("ry")
   });
 });
 
@@ -168,6 +187,14 @@ defmethod("figure_from_bb", "line", function(type, bb) {
   return new Line({ x1: bb[0], y1: bb[1], x2: bb[2], y2: bb[3] });
 });
 
+defmethod("move_figure", "line", function(fig, delta) {
+  return new Line({
+    x1: fig.get("x1") + delta[0],
+    y1: fig.get("y1") + delta[1],
+    x2: fig.get("x2") + delta[0],
+    y2: fig.get("y2") + delta[1]
+  });
+});
 
 // TOOLBAR
 
@@ -195,15 +222,33 @@ defmethod("tool_on_click", "select",
       return model.set("selection", Immutable.Set.of(fig));
     else if (fig === undefined && !multi)
       return model.set("selection", Immutable.Set.of());
-    else
-      return model;
   });
 
+defmethod("tool_on_drag", "select",
+  function(tool, model, bb, e) {
+    var start     = [bb[0], bb[1]],
+        delta     = [bb[2] - bb[0], bb[3] - bb[1]],
+        pred      = function(fig) { return inside_figure(fig, start) },
+        selection = model.get("selection"),
+        scene     = model.get("figures");
+
+    if (model.get("selection").find(pred) !== undefined) {
+      return model
+             .set("figures", scene.map(function(fig) {
+               return selection.contains(fig) ? move_figure(fig, delta) : fig;
+             }))
+             .set("selection", selection.map(function(fig) { return move_figure(fig, delta); }));
+    }
+  });
+
+
 function fig_drag_fn(tool, model, bb, e) {
+  if (!(bb[0] === bb[2] && bb[1] === bb[3])) {
     var scene = model.get("figures");
     var instance = figure_from_bb(tool, bb);
     return model.set("figures", scene.push(instance))
                 .set("selection", Immutable.Set.of(instance));
+  }
 }
 
 defmethod("tool_on_drag", "rect", fig_drag_fn);
@@ -219,7 +264,7 @@ var Tool = React.createClass({
         offset   = 40 * this.props.offset;
 
     return React.createElement("g",
-            { className: code === this.props.tool ? "selected" : "",
+            { className: "tool_" + code + (code === this.props.tool ? " selected" : ""),
               transform: "translate(" + offset + ",0)",
               onClick:   function(e) {
                            edit_model(global_model().set("tool", code));
@@ -258,7 +303,7 @@ function canvas_mouse_down(e) {
 
 function canvas_mouse_move(e) {
   var pos = mouse_pos(e);
-  if (click_pos !== undefined && (click_pos[0] !== pos[0] || click_pos[1] !== pos[1])) {
+  if (click_pos !== undefined && (drag_pos !== undefined || click_pos[0] !== pos[0] || click_pos[1] !== pos[1])) {
     drag_pos = pos;
     var model     = global_model(),
         bb        = [click_pos[0], click_pos[1], drag_pos[0], drag_pos[1]],
