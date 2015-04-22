@@ -15,14 +15,36 @@ function defmethod(name, dispatch_value, fn) {
 }
 
 
+function atom(value) {
+  return {value: value,
+          listeners: []};
+}
+
+function add_watch(atom, cb) {
+  atom.listeners.push(cb);
+}
+
+function reset(atom, value) {
+  var old = atom.value;
+  atom.value = value;
+  for (var i = 0; i < atom.listeners.length; ++i) {
+    atom.listeners[i](atom, old, value);
+  }
+}
+
+var list = function() { return Immutable.List.of.apply(Immutable.List, arguments); },
+    map  = function() { return Immutable.Map.apply(Immutable, arguments); },
+    set  = function() { return Immutable.Set.of.apply(Immutable.Set, arguments); },
+    eq   = function(a, b) { return Immutable.is(a,b); };
+
 // MODEL
 
-var empty_model = Immutable.Map({
+var empty_model = map({
                     tool: "select",
-                    figures:   Immutable.List.of(),
-                    selection: Immutable.Set.of()
+                    figures:   list(),
+                    selection: set()
                   }),
-    model_history = Immutable.List.of(empty_model),
+    model_history = list(empty_model),
     history_at = 0;
 
 function global_model() {
@@ -41,7 +63,7 @@ function push_history(model) {
 }
 
 function edit_model(model) {
-  if (!Immutable.is(model.get("figures"), global_model().get("figures"))) {
+  if (!eq(model.get("figures"), global_model().get("figures"))) {
     push_history(model);
   } else {
     model_history = model_history.set(history_at, model);
@@ -71,7 +93,7 @@ function persist (argument) {
 }
 
 function world_to_js() {
-  var cache = Immutable.List.of(),
+  var cache = list(),
       obj_id = function (o) {
                  var idx = cache.indexOf(o);
                  if (idx === -1) {
@@ -95,7 +117,7 @@ function world_from_js(json) {
   var figures = Immutable.List(json.figures).map(Immutable.Map),
       get_fig = function(i) { return figures.get(i); },
       models  = Immutable.List(json.models).map(function(m) {
-        return Immutable.Map({
+        return map({
           tool:      m.tool,
           selection: Immutable.List(m.selection).map(get_fig),
           figures:   Immutable.List(m.figures).map(get_fig)
@@ -160,7 +182,7 @@ defmethod("inside_stroke", "rect", function(fig, point) {
 });
 
 defmethod("figure_from_bb", "rect", function(type, bb) {
-  return Immutable.Map({
+  return map({
     type: "rect",
     x: Math.min(bb[0], bb[2]),
     y: Math.min(bb[1], bb[3]),
@@ -170,7 +192,7 @@ defmethod("figure_from_bb", "rect", function(type, bb) {
 });
 
 defmethod("move_figure", "rect", function(fig, delta) {
-  return Immutable.Map({
+  return map({
     type: "rect",
     x: fig.get("x") + delta[0],
     y: fig.get("y") + delta[1],
@@ -217,7 +239,7 @@ defmethod("inside_stroke", "oval", function(fig, point) {
 
 
 defmethod("figure_from_bb", "oval", function(type, bb) {
-  return Immutable.Map({
+  return map({
     type: "oval",
     cx: (bb[0] + bb[2])/2,
     cy: (bb[1] + bb[3])/2,
@@ -227,7 +249,7 @@ defmethod("figure_from_bb", "oval", function(type, bb) {
 });
 
 defmethod("move_figure", "oval", function(fig, delta) {
-  return Immutable.Map({
+  return map({
     type: "oval",
     cx: fig.get("cx") + delta[0],
     cy: fig.get("cy") + delta[1],
@@ -266,11 +288,11 @@ defmethod("inside_stroke", "line", function(fig, point) {
 });
 
 defmethod("figure_from_bb", "line", function(type, bb) {
-  return Immutable.Map({ type: "line", x1: bb[0], y1: bb[1], x2: bb[2], y2: bb[3] });
+  return map({ type: "line", x1: bb[0], y1: bb[1], x2: bb[2], y2: bb[3] });
 });
 
 defmethod("move_figure", "line", function(fig, delta) {
-  return Immutable.Map({ 
+  return map({ 
     type: "line", 
     x1: fig.get("x1") + delta[0],
     y1: fig.get("y1") + delta[1],
@@ -282,7 +304,7 @@ defmethod("move_figure", "line", function(fig, delta) {
 
 // TOOLBAR
 
-var tool_keys = Immutable.List.of(
+var tool_keys = list(
   ["select", "V"],
   ["rect",   "R"],
   ["oval",   "O"],
@@ -302,9 +324,9 @@ defmethod("tool_on_click", "select",
     else if (fig !== undefined && multi && !selection.contains(fig))
       return model.set("selection", selection.add(fig));
     else if (fig !== undefined && !multi)
-      return model.set("selection", Immutable.Set.of(fig));
+      return model.set("selection", set(fig));
     else if (fig === undefined && !multi)
-      return model.set("selection", Immutable.Set.of());
+      return model.set("selection", set());
   });
 
 defmethod("tool_on_drag", "select",
@@ -317,7 +339,7 @@ defmethod("tool_on_drag", "select",
     if (find_selected(selection, start) === undefined) {
       var fig = find_selected(scene, start);
       if (fig !== undefined) {
-        selection = Immutable.Set.of(fig);
+        selection = set(fig);
         model = model.set("selection", selection);
       }
     }
@@ -338,7 +360,7 @@ function fig_drag_fn(tool, model, bb, e) {
     var scene = model.get("figures");
     var instance = figure_from_bb(tool, bb);
     return model.set("figures", scene.push(instance))
-                .set("selection", Immutable.Set.of(instance));
+                .set("selection", set(instance));
   }
 }
 
@@ -385,7 +407,7 @@ var Toolbar = React.createClass({
 // CANVAS
 
 function current_viewport() {
-  return Immutable.Map({w: document.body.clientWidth, h: document.body.clientHeight});
+  return map({w: document.body.clientWidth, h: document.body.clientHeight});
 }
 
 var viewport = current_viewport(), 
@@ -438,7 +460,7 @@ function canvas_mouse_up(e) {
 function should_update(name, from, to, props) {
   for (var i = 0; i < props.length; ++i) {
     var prop = props[i];
-    if (!Immutable.is(from[prop], to[prop])) {
+    if (!eq(from[prop], to[prop])) {
       // console.log(name + "." + prop + " changed");
       return true;
     }
@@ -509,10 +531,10 @@ function render_canvas(model) {
 
 var stored = localStorage.getItem("vec/world");
 
-if (stored !== undefined) {
+if (stored !== null) {
   world_from_js(JSON.parse(stored));
 } else {
-  Immutable.List.of(
+  list(
     figure_from_bb("oval", [110, 115, 120, 125]),
     figure_from_bb("oval", [130, 115, 140, 125]),
     figure_from_bb("oval", [150, 115, 160, 125]),
