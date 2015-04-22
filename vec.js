@@ -19,7 +19,7 @@ function defmethod(name, dispatch_value, fn) {
 
 var empty_model = Immutable.Map({
                     tool: "select",
-                    figures: Immutable.List.of(),
+                    figures:   Immutable.List.of(),
                     selection: Immutable.Set.of()
                   }),
     model_history = Immutable.List.of(empty_model),
@@ -32,7 +32,7 @@ function global_model() {
 function push_history(model) {
   model_history = model_history.setSize(history_at+1).push(model);
   history_at++;
-  var skip = model_history.size - 20;
+  var skip = model_history.size - 50;
   if (skip > 0) {
     history_at -= skip;
     model_history = model_history.skip(skip);
@@ -96,7 +96,7 @@ function world_from_js(json) {
       get_fig = function(i) { return figures.get(i); },
       models  = Immutable.List(json.models).map(function(m) {
         return Immutable.Map({
-          tool: m.tool,
+          tool:      m.tool,
           selection: Immutable.List(m.selection).map(get_fig),
           figures:   Immutable.List(m.figures).map(get_fig)
       })});
@@ -323,6 +323,7 @@ defmethod("tool_on_drag", "select",
     }
 
     if (find_selected(selection, start) !== undefined) {
+      document.body.style.cursor = "move";
       return model
              .set("figures", scene.map(function(fig) {
                return selection.contains(fig) ? move_figure(fig, delta) : fig;
@@ -344,8 +345,6 @@ function fig_drag_fn(tool, model, bb, e) {
 defmethod("tool_on_drag", "rect", fig_drag_fn);
 defmethod("tool_on_drag", "oval", fig_drag_fn);
 defmethod("tool_on_drag", "line", fig_drag_fn);
-
-
 
 var Tool = React.createClass({
   shouldComponentUpdate: function(next_props) {
@@ -431,6 +430,7 @@ function canvas_mouse_up(e) {
         edit_model(new_model);
     }
   }
+  document.body.style.cursor = "auto";
   click_pos = undefined;
   drag_pos  = undefined;
 }
