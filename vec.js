@@ -39,60 +39,67 @@ var list = function() { return Immutable.List.of.apply(Immutable.List, arguments
 
 // MODEL
 
-var empty_model = map({
-                    tool: "select",
-                    figures:   list(),
-                    selection: set()
-                  }),
-    model_history = list(empty_model),
-    history_at = 0;
+function new_world() {
+  var empty_model = map({ tool:      "select",
+                          figures:   list(),
+                          selection: set() });
+  return map({ history:   list(empty_model),
+               at:        0,
+               click_pos: undefined,
+               drag_pos:  undefined,
+               viewport:  current_viewport() });
+}
 
-function global_model() {
-  return model_history.get(history_at);
+var world_ref = atom(new_world());
+
+function current_model(w) {
+  var world = w || world_ref.value;
+  return world.get("history").get(world.get("at"));
 }
 
 function push_history(model) {
-  model_history = model_history.setSize(history_at+1).push(model);
-  history_at++;
-  var skip = model_history.size - 50;
+  var history = world_ref.value.get("history"),
+      at      = world_ref.value.get("at"),
+      new_history = history.setSize(at+1).push(model),
+      new_at  = at+1;
+  
+  var skip = new_history.size - 50;
   if (skip > 0) {
-    history_at -= skip;
-    model_history = model_history.skip(skip);
+    new_at -= skip;
+    new_history = new_history.skip(skip);
   }
-  render_canvas();
+
+  reset(world_ref, world_ref.value.set("history", new_history).set("at", new_at));
 }
 
+
 function edit_model(model) {
-  if (!eq(model.get("figures"), global_model().get("figures"))) {
+  if (!eq(model.get("figures"), current_model().get("figures"))) {
     push_history(model);
   } else {
-    model_history = model_history.set(history_at, model);
-    render_canvas();
+    var world = world_ref.value;
+    reset(world_ref, world.setIn(["history", world.get("at")], model));
   }
-  persist();
 }
 
 function undo() {
-  if (history_at > 0) {
-    history_at--;
-    render_canvas();
-    persist();
-  }
+  var at = world_ref.value.get("at");
+  if (at > 0)
+    reset(world_ref, world_ref.value.set("at", at-1));
 }
 
 function redo() {
-  if (history_at < model_history.size-1) {
-    history_at++;
-    render_canvas();
-    persist();
-  }
+  var history = world_ref.value.get("history"),
+      at      = world_ref.value.get("at");
+  if (at < history.size-1)
+    reset(world_ref, world_ref.value.set("at", at+1));
 }
 
-function persist (argument) {
-  localStorage.setItem("vec/world", JSON.stringify(world_to_js()));
+function persist(world) {
+  localStorage.setItem("vec/world", JSON.stringify(world_to_js(world)));
 }
 
-function world_to_js() {
+function world_to_js(world) {
   var cache = list(),
       obj_id = function (o) {
                  var idx = cache.indexOf(o);
@@ -102,29 +109,27 @@ function world_to_js() {
                  } else
                    return idx;
                },
-      models = [];
-  model_history.forEach(function(model, i) {
-    models.push( { tool:      model.get("tool"),
+      history = [];
+  world.get("history").forEach(function(model, i) {
+    history.push({ tool:      model.get("tool"),
                    selection: model.get("selection").map(obj_id).toArray(),
                    figures:   model.get("figures").map(obj_id).toArray() });
   });
-  return { models: models,
-           history_at: history_at,
+  return { history: history,
+           at:      world.get("at"),
            figures: cache.map(function(o) { return o.toJS(); }).toArray() };
 }
 
 function world_from_js(json) {
   var figures = Immutable.List(json.figures).map(Immutable.Map),
       get_fig = function(i) { return figures.get(i); },
-      models  = Immutable.List(json.models).map(function(m) {
+      history = Immutable.List(json.history).map(function(m) {
         return map({
           tool:      m.tool,
           selection: Immutable.List(m.selection).map(get_fig),
           figures:   Immutable.List(m.figures).map(get_fig)
       })});
-  model_history = models;
-  history_at = json.history_at;
-  render_canvas();
+  return new_world().set("history", history).set("at", json.at);
 }
 
 // FIGURES
@@ -133,7 +138,7 @@ defmulti("render_figure",  function(fig, selected, key) { return fig.get("type")
 defmulti("inside_figure",  function(fig, point)         { return fig.get("type"); });
 defmulti("inside_stroke",  function(fig, point)         { return fig.get("type"); });
 defmulti("move_figure",    function(fig, delta)         { return fig.get("type"); });
-defmulti("figure_from_bb", function(type, bb)           { return type; });
+defmulti("figure_from_bb", function(type, p1, p2)       { return type; });
 
 function find_selected(figures, point) {
   var by_stroke = figures.find(function(fig) { return inside_stroke(fig, point); });
@@ -158,10 +163,10 @@ defmethod("render_figure", "rect", function(fig, selected, key) {
 });
 
 defmethod("inside_figure", "rect", function(fig, point) {
-  return fig.get("x")                <= point[0] &&
-         fig.get("x") + fig.get("w") >= point[0] &&
-         fig.get("y")                <= point[1] &&
-         fig.get("y") + fig.get("h") >= point[1];
+  return fig.get("x")                <= point.get("x") &&
+         fig.get("x") + fig.get("w") >= point.get("x") &&
+         fig.get("y")                <= point.get("y") &&
+         fig.get("y") + fig.get("h") >= point.get("y");
 });
 
 defmethod("inside_stroke", "rect", function(fig, point) {
@@ -169,8 +174,8 @@ defmethod("inside_stroke", "rect", function(fig, point) {
       y1 = fig.get("y"),
       x2 = fig.get("x") + fig.get("w"),
       y2 = fig.get("y") + fig.get("h"),
-      x  = point[0],
-      y  = point[1],
+      x  = point.get("x"),
+      y  = point.get("y"),
       t  = selection_treshold;
 
   return (  y1 - t <= y && y <= y2 + t &&
@@ -181,21 +186,21 @@ defmethod("inside_stroke", "rect", function(fig, point) {
            (y2 - t <= y && y <= y2 + t)));
 });
 
-defmethod("figure_from_bb", "rect", function(type, bb) {
+defmethod("figure_from_bb", "rect", function(type, p1, p2) {
   return map({
     type: "rect",
-    x: Math.min(bb[0], bb[2]),
-    y: Math.min(bb[1], bb[3]),
-    w: Math.abs(bb[0] - bb[2]),
-    h: Math.abs(bb[1] - bb[3])
+    x: Math.min(p1.get("x"), p2.get("x")),
+    y: Math.min(p1.get("y"), p2.get("y")),
+    w: Math.abs(p1.get("x") - p2.get("x")),
+    h: Math.abs(p1.get("y") - p2.get("y"))
   });
 });
 
 defmethod("move_figure", "rect", function(fig, delta) {
   return map({
     type: "rect",
-    x: fig.get("x") + delta[0],
-    y: fig.get("y") + delta[1],
+    x: fig.get("x") + delta.get("x"),
+    y: fig.get("y") + delta.get("y"),
     w: fig.get("w"),
     h: fig.get("h")
   });
@@ -221,13 +226,13 @@ function inside_ellipse(x, y, cx, cy, rx, ry) {
 }
 
 defmethod("inside_figure", "oval", function(fig, point) {
-  return inside_ellipse(point[0], point[1], fig.get("cx"), fig.get("cy"), fig.get("rx"), fig.get("ry"));
+  return inside_ellipse(point.get("x"), point.get("y"), fig.get("cx"), fig.get("cy"), fig.get("rx"), fig.get("ry"));
 });
 
 
 defmethod("inside_stroke", "oval", function(fig, point) {
-  var x = point[0],
-      y = point[1],
+  var x = point.get("x"),
+      y = point.get("y"),
       cx = fig.get("cx"),
       cy = fig.get("cy"),
       rx = fig.get("rx"),
@@ -238,21 +243,21 @@ defmethod("inside_stroke", "oval", function(fig, point) {
 
 
 
-defmethod("figure_from_bb", "oval", function(type, bb) {
+defmethod("figure_from_bb", "oval", function(type, p1, p2) {
   return map({
     type: "oval",
-    cx: (bb[0] + bb[2])/2,
-    cy: (bb[1] + bb[3])/2,
-    rx: Math.abs(bb[0] - bb[2])/2,
-    ry: Math.abs(bb[1] - bb[3])/2
+    cx: (p1.get("x") + p2.get("x"))/2,
+    cy: (p1.get("y") + p2.get("y"))/2,
+    rx: Math.abs(p1.get("x") - p2.get("x"))/2,
+    ry: Math.abs(p1.get("y") - p2.get("y"))/2
   });
 });
 
 defmethod("move_figure", "oval", function(fig, delta) {
   return map({
     type: "oval",
-    cx: fig.get("cx") + delta[0],
-    cy: fig.get("cy") + delta[1],
+    cx: fig.get("cx") + delta.get("x"),
+    cy: fig.get("cy") + delta.get("y"),
     rx: fig.get("rx"),
     ry: fig.get("ry")
   });
@@ -276,8 +281,8 @@ defmethod("inside_stroke", "line", function(fig, point) {
       y1 = fig.get("y1"),
       x2 = fig.get("x2"),
       y2 = fig.get("y2"),
-      x  = point[0],
-      y  = point[1];
+      x  = point.get("x"),
+      y  = point.get("y");
 
   if (Math.min(x1, x2) <= x &&
       Math.max(x1, x2) >= x &&
@@ -287,17 +292,17 @@ defmethod("inside_stroke", "line", function(fig, point) {
            Math.sqrt((y2-y1) * (y2-y1) + (x2 - x1) * (x2 - x1)) <= selection_treshold;
 });
 
-defmethod("figure_from_bb", "line", function(type, bb) {
-  return map({ type: "line", x1: bb[0], y1: bb[1], x2: bb[2], y2: bb[3] });
+defmethod("figure_from_bb", "line", function(type, p1, p2) {
+  return map({ type: "line", x1: p1.get("x"), y1: p1.get("y"), x2: p2.get("x"), y2: p2.get("y") });
 });
 
 defmethod("move_figure", "line", function(fig, delta) {
   return map({ 
     type: "line", 
-    x1: fig.get("x1") + delta[0],
-    y1: fig.get("y1") + delta[1],
-    x2: fig.get("x2") + delta[0],
-    y2: fig.get("y2") + delta[1]
+    x1: fig.get("x1") + delta.get("x"),
+    y1: fig.get("y1") + delta.get("y"),
+    x2: fig.get("x2") + delta.get("x"),
+    y2: fig.get("y2") + delta.get("y")
   });
 });
 
@@ -311,8 +316,8 @@ var tool_keys = list(
   ["line",   "L"]
 );
 
-defmulti("tool_on_click", function(tool, model, point, e) { return tool; });
-defmulti("tool_on_drag",  function(tool, model, bb, e)    { return tool; });
+defmulti("tool_on_click", function(tool, model, point, e)  { return tool; });
+defmulti("tool_on_drag",  function(tool, model, p1, p2, e) { return tool; });
 
 defmethod("tool_on_click", "select",
   function(tool, model, point, e) {
@@ -330,21 +335,20 @@ defmethod("tool_on_click", "select",
   });
 
 defmethod("tool_on_drag", "select",
-  function(tool, model, bb, e) {
-    var start     = [bb[0], bb[1]],
-        delta     = [bb[2] - bb[0], bb[3] - bb[1]],
+  function(tool, model, p1, p2, e) {
+    var delta     = map({x: p2.get("x") - p1.get("x"), y: p2.get("y") - p1.get("y")}),
         selection = model.get("selection"),
         scene     = model.get("figures");
 
-    if (find_selected(selection, start) === undefined) {
-      var fig = find_selected(scene, start);
+    if (find_selected(selection, p1) === undefined) {
+      var fig = find_selected(scene, p1);
       if (fig !== undefined) {
         selection = set(fig);
         model = model.set("selection", selection);
       }
     }
 
-    if (find_selected(selection, start) !== undefined) {
+    if (find_selected(selection, p1) !== undefined) {
       document.body.style.cursor = "move";
       return model
              .set("figures", scene.map(function(fig) {
@@ -355,10 +359,10 @@ defmethod("tool_on_drag", "select",
   });
 
 
-function fig_drag_fn(tool, model, bb, e) {
-  if (!(bb[0] === bb[2] && bb[1] === bb[3])) {
+function fig_drag_fn(tool, model, p1, p2, e) {
+  if (!eq(p1, p2)) {
     var scene = model.get("figures");
-    var instance = figure_from_bb(tool, bb);
+    var instance = figure_from_bb(tool, p1, p2);
     return model.set("figures", scene.push(instance))
                 .set("selection", set(instance));
   }
@@ -381,7 +385,7 @@ var Tool = React.createClass({
             { className: "tool_" + code + (this.props.selected ? " selected" : ""),
               transform: "translate(" + offset + ",0)",
               onClick:   function(e) {
-                           edit_model(global_model().set("tool", code));
+                           edit_model(current_model().set("tool", code));
                            e.stopPropagation();
                          } },
             React.createElement("rect", {x: 0, y: 0, width: 40, height: 40}),
@@ -410,40 +414,36 @@ function current_viewport() {
   return map({w: document.body.clientWidth, h: document.body.clientHeight});
 }
 
-var viewport = current_viewport(), 
-    click_pos,
-    drag_pos;
-
 function mouse_pos(e) {
-  return [10 * Math.round(e.clientX / 10),
-          10 * Math.round(e.clientY / 10)];
+  return map({x: 10 * Math.round(e.clientX / 10),
+              y: 10 * Math.round(e.clientY / 10)});
 }
 
 function canvas_mouse_down(e) {
-  if (click_pos === undefined)
-    click_pos = mouse_pos(e);
+  if (world_ref.value.get("click_pos") === undefined)
+    reset(world_ref, world_ref.value.set("click_pos", mouse_pos(e)));
 }
 
 function canvas_mouse_move(e) {
-  var pos = mouse_pos(e);
-  if (click_pos !== undefined && (drag_pos !== undefined || click_pos[0] !== pos[0] || click_pos[1] !== pos[1])) {
-    drag_pos = pos;
-    var model     = global_model(),
-        bb        = [click_pos[0], click_pos[1], drag_pos[0], drag_pos[1]],
-        tool      = model.get("tool"),
-        new_model = tool_on_drag(tool, model, bb, e);
-    if (new_model !== undefined)
-      render_canvas(new_model);
+  var click_pos = world_ref.value.get("click_pos"),
+      drag_pos  = world_ref.value.get("drag_pos"),
+      pos       = mouse_pos(e);
+  if (click_pos !== undefined && 
+      (drag_pos !== undefined || !eq(click_pos, pos))) {
+    reset(world_ref, world_ref.value.set("drag_pos", pos).set("drag_event", e));
   }
 }
 
 function canvas_mouse_up(e) {
-  var model = global_model(),
-      tool  = model.get("tool");
+  var model = current_model(),
+      tool  = model.get("tool"),
+      click_pos = world_ref.value.get("click_pos"),
+      drag_pos  = world_ref.value.get("drag_pos"),
+      pos       = mouse_pos(e);
+
   if (click_pos !== undefined) {
     if (drag_pos !== undefined) {
-      var bb    = [click_pos[0], click_pos[1], drag_pos[0], drag_pos[1]],
-          new_model = tool_on_drag(tool, model, bb, e);
+      var new_model = tool_on_drag(tool, model, click_pos, drag_pos, e);
       if (new_model !== undefined)
         edit_model(new_model);
     } else {
@@ -453,8 +453,7 @@ function canvas_mouse_up(e) {
     }
   }
   document.body.style.cursor = "auto";
-  click_pos = undefined;
-  drag_pos  = undefined;
+  reset(world_ref, world_ref.value.delete("click_pos").delete("drag_pos").delete("drag_event"));
 }
 
 function should_update(name, from, to, props) {
@@ -483,10 +482,11 @@ var Scene = React.createClass({
 
 var History = React.createClass({
   shouldComponentUpdate: function(next_props) {
-    return should_update("  History", this.props, next_props, ["history", "history_at", "viewport"]);
+    return should_update("  History", this.props, next_props, ["history", "at", "viewport"]);
   },
   render: function() {
-    var at       = this.props.history_at,
+    var history  = this.props.history,
+        at       = this.props.at,
         viewport = this.props.viewport,
         render   = function(m, i) {
                      return React.createElement("rect", {
@@ -496,8 +496,8 @@ var History = React.createClass({
                        y:           viewport.get("h") - 20,
                        width:       12,
                        height:      12,
-                       onClick:     function(e) { history_at = i; render_canvas(); },
-                       onMouseOver: function(e) { render_canvas(model_history.get(i)); },
+                       onClick:     function(e) { at = i; render_canvas(); },
+                       onMouseOver: function(e) { render_canvas(history.get(i)); },
                        onMouseOut:  function(e) { render_canvas(); },
                      });
                    };
@@ -505,34 +505,43 @@ var History = React.createClass({
   }
 });
 
-var Canvas = React.createClass({
+var UI = React.createClass({
   shouldComponentUpdate: function(next_props) {
-    return should_update("Canvas", this.props, next_props, ["model", "viewport"]);
+    return should_update("Canvas", this.props, next_props, ["world"]);
   },
   render: function() {
-    var model  = this.props.model,
-        viewport = this.props.viewport;
+    var world     = this.props.world,
+        model     = current_model(world),
+        click_pos = world.get("click_pos"),
+        drag_pos  = world.get("drag_pos");
+    if (drag_pos !== undefined) {
+      var new_model = tool_on_drag(model.get("tool"), model, click_pos, drag_pos, world.get("drag_event"));
+      if (new_model !== undefined)
+        model = new_model;
+    }
     return React.createElement("svg",
              { id: "canvas" },
-             React.createElement(Toolbar, { tool: model.get("tool") }),
-             React.createElement(History, { history: model_history, history_at: history_at, viewport: viewport }),
+             React.createElement(Toolbar, { tool:     model.get("tool") }),
+             React.createElement(History, { history:  world.get("history"), 
+                                            at:       world.get("at"),
+                                            viewport: world.get("viewport") }),
              React.createElement(Scene,
                { figures:   model.get("figures"),
                  selection: model.get("selection") }));
   }
 });
 
-function render_canvas(model) {
-  React.render(
-    React.createElement(Canvas, { model:    (model || global_model()),
-                                  viewport: window.viewport }),
-    document.body);
+function render_ui(world) {
+  React.render(React.createElement(UI, { world: world }), document.body);
 }
+
+add_watch(world_ref, function(world, old, _new) { render_ui(_new); });
+add_watch(world_ref, function(world, old, _new) { persist(_new); });
 
 var stored = localStorage.getItem("vec/world");
 
 if (stored !== null) {
-  world_from_js(JSON.parse(stored));
+  reset(world_ref, world_from_js(JSON.parse(stored)));
 } else {
   list(
     figure_from_bb("oval", [110, 115, 120, 125]),
@@ -546,7 +555,7 @@ if (stored !== null) {
     figure_from_bb("line", [100, 180, 600, 180]),
     figure_from_bb("rect", [100, 100, 600, 400])
   ).forEach(function(fig) {
-    edit_model(global_model().set("figures", global_model().get("figures").push(fig)));
+    edit_model(current_model().set("figures", current_model().get("figures").push(fig)));
   });
 }
 
@@ -556,17 +565,15 @@ document.addEventListener("keydown", function(e) {
   if (!e.ctrlKey && !e.shiftKey && !e.metaKey) {
     var tool = tool_keys.find(function(t) { return t[1].charCodeAt(0) === e.keyCode });
     if (tool !== undefined)
-      edit_model(global_model().set("tool", tool[0]));
+      edit_model(current_model().set("tool", tool[0]));
   }
   switch (e.keyCode) {
     case 27: // escape
-      click_pos = undefined;
-      drag_pos  = undefined;
-      render_canvas();
+      reset(world_ref, world_ref.value.delete("click_pos").delete("drag_pos"));
       break;
     case 8:  // backspace
     case 46: // delete
-      var model = global_model(),
+      var model = current_model(),
           scene = model.get("figures"),
           selection = model.get("selection"),
           selected  = function(fig) { return selection.contains(fig); };
@@ -583,6 +590,8 @@ document.addEventListener("keydown", function(e) {
 document.addEventListener("mousedown", canvas_mouse_down);
 document.addEventListener("mousemove", canvas_mouse_move);
 document.addEventListener("mouseup", canvas_mouse_up);
-window.addEventListener("resize", function(e) { viewport = current_viewport(); render_canvas(); } );
+window.addEventListener("resize", function(e) { 
+  reset(world_ref, world_ref.value.set("viewport", current_viewport()));
+} );
 
 
