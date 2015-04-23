@@ -634,16 +634,16 @@ if (localStorage.getItem("vec/world") !== null) {
   reset(world_ref, world_from_js(JSON.parse(localStorage.getItem("vec/world"))));
 } else {
   list(
-    figure_from_bb("oval", [110, 115, 120, 125]),
-    figure_from_bb("oval", [130, 115, 140, 125]),
-    figure_from_bb("oval", [150, 115, 160, 125]),
-    figure_from_bb("line", [100, 140, 170, 140]),
-    figure_from_bb("line", [170, 140, 180, 110]),
-    figure_from_bb("line", [180, 110, 280, 110]),
-    figure_from_bb("line", [280, 110, 290, 140]),
-    figure_from_bb("line", [290, 140, 600, 140]),
-    figure_from_bb("line", [100, 180, 600, 180]),
-    figure_from_bb("rect", [100, 100, 600, 400])
+    figure_from_bb("oval", map({x: 110, y: 115}), map({x: 120, y: 125})),
+    figure_from_bb("oval", map({x: 130, y: 115}), map({x: 140, y: 125})),
+    figure_from_bb("oval", map({x: 150, y: 115}), map({x: 160, y: 125})),
+    figure_from_bb("line", map({x: 100, y: 140}), map({x: 170, y: 140})),
+    figure_from_bb("line", map({x: 170, y: 140}), map({x: 180, y: 110})),
+    figure_from_bb("line", map({x: 180, y: 110}), map({x: 280, y: 110})),
+    figure_from_bb("line", map({x: 280, y: 110}), map({x: 290, y: 140})),
+    figure_from_bb("line", map({x: 290, y: 140}), map({x: 600, y: 140})),
+    figure_from_bb("line", map({x: 100, y: 180}), map({x: 600, y: 180})),
+    figure_from_bb("rect", map({x: 100, y: 100}), map({x: 600, y: 400}))
   ).forEach(function(fig) {
     edit_model(current_model().set("figures", current_model().get("figures").push(fig)));
   });

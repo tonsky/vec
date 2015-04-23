@@ -1,7 +1,8 @@
 <!doctype html>
 <html>
 <head>
-  <!-- <link rel="stylesheet" href="http://code.cdn.mozilla.net/fonts/fira.css"> -->
+  <meta charset="utf-8" />
+  <title>Vector editor</title>
   <script src="includes/react-0.13.2.js"></script>
   <script src="includes/immutable.js"></script>
   <style>
@@ -12,7 +13,7 @@
 
     #toolbar > g > rect { fill: transparent; }
     #toolbar > g { cursor: pointer; }
-    #toolbar > g > text { fill: #C0C5CE; font: 20px "Netto OT"; }
+    #toolbar > g > text { fill: #C0C5CE; font: 20px Consolas, Menlo, monospace; }
     #toolbar > g.selected > rect { fill: #C0C5CE; }
     #toolbar > .tool_select.selected > rect { fill: #96AF97; }
     #toolbar > .tool_rect.selected > rect { fill: #BF616A; }
