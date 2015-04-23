@@ -581,6 +581,7 @@ document.addEventListener("keydown", function(e) {
       if (e.metaKey || e.ctrlKey) {
         if (e.shiftKey) redo(); else undo();
       }
+      e.preventDefault();
       break;
   }
 });
