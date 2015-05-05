@@ -13,6 +13,8 @@ Check out [vec.js](https://github.com/tonsky/vec/blob/gh-pages/vec.js), it’s d
 
 Read more [about approach](http://tonsky.me/talks/2015-codefest/) (in Russian).
 
+Video (in Russian): [code walkthrough](http://www.youtube.com/watch?v=lDkrXTDwbJQ), [Q&A session](http://www.youtube.com/watch?v=tUtLe1VlkYc)
+
 [Live version](http://tonsky.me/vec/)
 
 [<img src="vec.png">](http://tonsky.me/vec/)
